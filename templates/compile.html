@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compile Videos - {{ campaign.title }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 {{ campaign.title }}</h1>
+            <p>Compile & Download Final Video</p>
+        </header>
+
+        <div class="compile-container">
+            <div class="campaign-info">
+                <h2>Campaign Details</h2>
+                <p><strong>Event:</strong> {{ campaign.event_type|title }}</p>
+                <p><strong>AI Message:</strong> {{ campaign.ai_message }}</p>
+                <p><strong>Emojis:</strong> {{ campaign.ai_emojis }}</p>
+                <p><strong>Videos Recorded:</strong> <span id="videoCount">{{ campaign.videos|length }}</span></p>
+            </div>
+
+            <div class="videos-list">
+                <h3>📹 Recorded Videos</h3>
+                {% if campaign.videos %}
+                    <ul>
+                        {% for video in campaign.videos %}
+                        <li>
+                            <span class="video-icon">🎥</span>
+                            <strong>{{ video.name }}</strong>
+                            <span class="video-time">{{ video.uploaded_at[:19] }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="no-videos">No videos recorded yet. Share the recording link!</p>
+                {% endif %}
+            </div>
+
+            {% if campaign.videos %}
+            <div class="compile-section">
+                {% if campaign.compiled_video %}
+                    <div class="success-box">
+                        <h2>✅ Video Compiled Successfully!</h2>
+                        <p>Your final video with AI effects is ready!</p>
+                        <a href="/api/download/{{ campaign.id }}" class="btn btn-success btn-large">
+                            ⬇️ Download Final Video
+                        </a>
+                    </div>
+                {% else %}
+                    <button id="compileBtn" class="btn btn-primary btn-large" onclick="compileVideos()">
+                        ✨ Compile Videos with AI Effects
+                    </button>
+                    
+                    <div id="compileProgress" class="progress" style="display: none;">
+                        <div class="progress-bar"></div>
+                        <span class="progress-text">Processing videos... This may take a few minutes</span>
+                    </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="share-section">
+                <h3>📤 Share Recording Link</h3>
+                <div class="link-box">
+                    <input type="text" id="recordLink" value="{{ request.url_root }}record/{{ campaign.id }}" readonly>
+                    <button class="btn btn-secondary" onclick="copyLink()">📋 Copy</button>
+                </div>
+                <button class="btn btn-success" onclick="shareWhatsApp()">
+                    📱 Share on WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const campaignId = '{{ campaign.id }}';
+        const campaignTitle = '{{ campaign.title }}';
+
+        async function compileVideos() {
+            const btn = document.getElementById('compileBtn');
+            const progress = document.getElementById('compileProgress');
+            
+            btn.disabled = true;
+            progress.style.display = 'block';
+
+            try {
+                const response = await fetch(`/api/compile-videos/${campaignId}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload page to show download button
+                    location.reload();
+                } else {
+                    alert('Compilation failed: ' + data.error);
+                    btn.disabled = false;
+                    progress.style.display = 'none';
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+                progress.style.display = 'none';
+            }
+        }
+
+        function copyLink() {
+            const link = document.getElementById('recordLink');
+            link.select();
+            document.execCommand('copy');
+            alert('✅ Link copied to clipboard!');
+        }
+
+        function shareWhatsApp() {
+            const link = document.getElementById('recordLink').value;
+            const text = encodeURIComponent(
+                `🎥 Record your video wish for: ${campaignTitle}\n\n` +
+                `Click here to record: ${link}`
+            );
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+        }
+
+        // Auto-refresh video count every 10 seconds
+        setInterval(async () => {
+            try {
+                const response = await fetch(window.location.href);
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const newCount = doc.querySelector('.videos-list ul')?.children.length || 0;
+                
+                if (newCount !== {{ campaign.videos|length }}) {
+                    location.reload();
+                }
+            } catch (e) {
+                console.log('Auto-refresh error:', e);
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

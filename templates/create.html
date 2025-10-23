@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Campaign - Video Greetings</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 Create Campaign</h1>
+            <a href="/" class="back-link">← Back to Home</a>
+        </header>
+
+        <div class="form-container">
+            <form id="campaignForm">
+                <div class="form-group">
+                    <label for="title">Campaign Title *</label>
+                    <input type="text" id="title" name="title" required 
+                           placeholder="e.g., Birthday Wishes for John">
+                </div>
+
+                <div class="form-group">
+                    <label for="event_type">Event Type *</label>
+                    <select id="event_type" name="event_type" required>
+                        <option value="">-- Select Event --</option>
+                        <option value="birthday">🎂 Birthday</option>
+                        <option value="farewell">👋 Farewell</option>
+                        <option value="diwali">🪔 Diwali</option>
+                        <option value="anniversary">💑 Anniversary</option>
+                        <option value="congratulations">🏆 Congratulations</option>
+                        <option value="thank_you">🙏 Thank You</option>
+                        <option value="get_well_soon">💪 Get Well Soon</option>
+                        <option value="custom">💝 Custom Wish</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="recipient_name">Recipient Name (Optional)</label>
+                    <input type="text" id="recipient_name" name="recipient_name" 
+                           placeholder="e.g., John Smith">
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-large" id="createBtn">
+                    🚀 Create Campaign
+                </button>
+            </form>
+        </div>
+
+        <div id="resultContainer" class="result-container" style="display: none;">
+            <h2>✅ Campaign Created Successfully!</h2>
+            
+            <div class="ai-preview">
+                <h3>🤖 AI-Generated Message:</h3>
+                <p id="aiMessage" class="ai-message"></p>
+                <p id="aiEmojis" class="ai-emojis"></p>
+            </div>
+
+            <div class="link-section">
+                <label>📎 Recording Link (Share via WhatsApp)</label>
+                <div class="link-box">
+                    <input type="text" id="recordLink" readonly>
+                    <button class="btn btn-secondary" onclick="copyLink()">📋 Copy</button>
+                </div>
+                <button class="btn btn-success" onclick="shareWhatsApp()">
+                    📱 Share on WhatsApp
+                </button>
+            </div>
+
+            <div class="link-section">
+                <label>🎬 Compilation Link (For Manager)</label>
+                <div class="link-box">
+                    <input type="text" id="compileLink" readonly>
+                    <button class="btn btn-secondary" onclick="copyCompileLink()">📋 Copy</button>
+                </div>
+            </div>
+
+            <div class="actions">
+                <a href="/" class="btn btn-outline">Create Another Campaign</a>
+                <button class="btn btn-primary" onclick="goToRecording()">
+                    🎥 Start Recording
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let campaignData = null;
+
+        document.getElementById('campaignForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('createBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Creating...';
+
+            const formData = {
+                title: document.getElementById('title').value,
+                event_type: document.getElementById('event_type').value,
+                recipient_name: document.getElementById('recipient_name').value
+            };
+
+            try {
+                const response = await fetch('/api/create-campaign', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    campaignData = data;
+                    
+                    // Show AI-generated content
+                    document.getElementById('aiMessage').textContent = data.ai_message;
+                    document.getElementById('aiEmojis').textContent = data.ai_emojis;
+                    
+                    // Show links
+                    document.getElementById('recordLink').value = data.record_url;
+                    document.getElementById('compileLink').value = 
+                        window.location.origin + '/compile/' + data.campaign_id;
+                    
+                    // Hide form, show result
+                    document.querySelector('.form-container').style.display = 'none';
+                    document.getElementById('resultContainer').style.display = 'block';
+                } else {
+                    alert('Error creating campaign: ' + data.error);
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Create Campaign';
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = '🚀 Create Campaign';
+            }
+        });
+
+        function copyLink() {
+            const link = document.getElementById('recordLink');
+            link.select();
+            document.execCommand('copy');
+            alert('✅ Recording link copied to clipboard!');
+        }
+
+        function copyCompileLink() {
+            const link = document.getElementById('compileLink');
+            link.select();
+            document.execCommand('copy');
+            alert('✅ Compilation link copied to clipboard!');
+        }
+
+        function shareWhatsApp() {
+            const link = document.getElementById('recordLink').value;
+            const text = encodeURIComponent(
+                `🎥 Record your video wish!\n\n` +
+                `Campaign: ${campaignData.title}\n` +
+                `Click here to record: ${link}`
+            );
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+        }
+
+        function goToRecording() {
+            window.location.href = document.getElementById('recordLink').value;
+        }
+    </script>
+</body>
+</html>

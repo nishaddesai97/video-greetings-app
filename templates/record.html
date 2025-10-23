@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Record Video - {{ campaign.title }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 {{ campaign.title }}</h1>
+            <p>{{ campaign.event_type|title }} Greeting</p>
+        </header>
+
+        <div class="recorder-container">
+            <div class="video-section">
+                <video id="preview" autoplay muted playsinline></video>
+                <video id="playback" controls style="display: none;"></video>
+                
+                <div class="controls">
+                    <button id="startBtn" class="btn btn-primary btn-large">
+                        🎬 Start Recording
+                    </button>
+                    <button id="stopBtn" class="btn btn-danger" style="display: none;">
+                        ⏹️ Stop Recording
+                    </button>
+                    <button id="retakeBtn" class="btn btn-secondary" style="display: none;">
+                        🔄 Retake
+                    </button>
+                </div>
+
+                <div class="timer" id="timer" style="display: none;">
+                    ⏱️ <span id="timerText">00:00</span>
+                </div>
+            </div>
+
+            <div class="upload-section" id="uploadSection" style="display: none;">
+                <div class="form-group">
+                    <label for="name">Your Name *</label>
+                    <input type="text" id="name" placeholder="Enter your name" required>
+                </div>
+                
+                <button id="uploadBtn" class="btn btn-success btn-large">
+                    ✅ Upload Video
+                </button>
+                
+                <div id="progress" class="progress" style="display: none;">
+                    <div class="progress-bar"></div>
+                    <span class="progress-text">Uploading...</span>
+                </div>
+            </div>
+
+            <div id="successMessage" class="success-message" style="display: none;">
+                <h2>✅ Video Uploaded Successfully!</h2>
+                <p>Total videos recorded: <strong id="videoCount">0</strong></p>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="location.reload()">
+                        🎥 Record Another
+                    </button>
+                    <a href="/" class="btn btn-outline">Done</a>
+                </div>
+            </div>
+
+            <div class="tips">
+                <h3>📝 Recording Tips:</h3>
+                <ul>
+                    <li>✅ Find a well-lit, quiet place</li>
+                    <li>✅ Hold phone horizontally for best results</li>
+                    <li>✅ Speak clearly towards the camera</li>
+                    <li>✅ Keep it under 1 minute for best experience</li>
+                    <li>✅ Smile and be natural! 😊</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const campaignId = '{{ campaign.id }}';
+        let mediaRecorder;
+        let recordedChunks = [];
+        let stream;
+        let timerInterval;
+        let seconds = 0;
+
+        const preview = document.getElementById('preview');
+        const playback = document.getElementById('playback');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadSection = document.getElementById('uploadSection');
+        const successMessage = document.getElementById('successMessage');
+        const timer = document.getElementById('timer');
+        const timerText = document.getElementById('timerText');
+
+        // Initialize camera
+        async function initCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    }, 
+                    audio: true 
+                });
+                preview.srcObject = stream;
+            } catch (error) {
+                alert('❌ Camera access denied. Please allow camera and microphone permissions.');
+                console.error('Camera error:', error);
+            }
+        }
+
+        // Start recording
+        startBtn.addEventListener('click', () => {
+            recordedChunks = [];
+            
+            const options = { mimeType: 'video/webm;codecs=vp9' };
+            try {
+                mediaRecorder = new MediaRecorder(stream, options);
+            } catch (e) {
+                // Fallback for browsers that don't support vp9
+                mediaRecorder = new MediaRecorder(stream);
+            }
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                playback.src = URL.createObjectURL(blob);
+                preview.style.display = 'none';
+                playback.style.display = 'block';
+                uploadSection.style.display = 'block';
+                
+                // Stop timer
+                clearInterval(timerInterval);
+            };
+
+            mediaRecorder.start();
+            
+            // UI updates
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            timer.style.display = 'block';
+            
+            // Start timer
+            seconds = 0;
+            timerInterval = setInterval(() => {
+                seconds++;
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                timerText.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }, 1000);
+        });
+
+        // Stop recording
+        stopBtn.addEventListener('click', () => {
+            mediaRecorder.stop();
+            stopBtn.style.display = 'none';
+            retakeBtn.style.display = 'inline-block';
+            
+            // Stop camera
+            stream.getTracks().forEach(track => track.stop());
+        });
+
+        // Retake video
+        retakeBtn.addEventListener('click', () => {
+            playback.style.display = 'none';
+            preview.style.display = 'block';
+            uploadSection.style.display = 'none';
+            retakeBtn.style.display = 'none';
+            startBtn.style.display = 'inline-block';
+            timer.style.display = 'none';
+            timerText.textContent = '00:00';
+            
+            initCamera();
+        });
+
+        // Upload video
+        uploadBtn.addEventListener('click', async () => {
+            const name = document.getElementById('name').value.trim();
+            
+            if (!name) {
+                alert('Please enter your name');
+                return;
+            }
+
+            uploadBtn.disabled = true;
+            document.getElementById('progress').style.display = 'block';
+
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const formData = new FormData();
+            formData.append('video', blob, 'recording.webm');
+            formData.append('name', name);
+
+            try {
+                const response = await fetch(`/api/upload-video/${campaignId}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    uploadSection.style.display = 'none';
+                    playback.style.display = 'none';
+                    successMessage.style.display = 'block';
+                    document.getElementById('videoCount').textContent = data.video_count;
+                } else {
+                    alert('Upload failed: ' + data.error);
+                    uploadBtn.disabled = false;
+                }
+            } catch (error) {
+                alert('Upload error: ' + error.message);
+                uploadBtn.disabled = false;
+            } finally {
+                document.getElementById('progress').style.display = 'none';
+            }
+        });
+
+        // Initialize camera on load
+        initCamera();
+    </script>
+</body>
+</html>
