@@ -328,17 +328,10 @@ def create_campaign():
     }
     save_campaigns(campaigns)
     
-    # Fix URL generation to avoid IP duplication
-    server_name = request.headers.get('Host', '').split(',')[0]  # Get the first host if multiple
-    app.config['SERVER_NAME'] = server_name
-    
-    record_url = url_for('record_page', campaign_id=campaign_id, _external=True)
-    app.config['SERVER_NAME'] = None  # Reset server name
-    
     return jsonify({
         'success': True,
         'campaign_id': campaign_id,
-        'record_url': record_url,
+        'record_url': url_for('record_page', campaign_id=campaign_id, _external=True),
         'ai_message': ai_message,
         'ai_emojis': ai_emojis
     })
