@@ -9,7 +9,12 @@ import requests
 import cv2
 import numpy as np
 import math
-from moviepy.editor import VideoFileClip, concatenate_audioclips, CompositeAudioClip
+from moviepy.editor import (
+    VideoFileClip, 
+    concatenate_audioclips, 
+    CompositeAudioClip, 
+    AudioFileClip
+)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
@@ -19,8 +24,22 @@ app.config['COMPILED_FOLDER'] = 'compiled'
 # Create necessary directories
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['COMPILED_FOLDER'], exist_ok=True)
+os.makedirs(os.path.join('static', 'music'), exist_ok=True)
 
 CAMPAIGNS_FILE = 'campaigns.json'
+
+# Setup default music file if it doesn't exist
+def setup_default_music():
+    music_file = os.path.join('static', 'music', 'default_background.wav')
+    if not os.path.exists(music_file):
+        try:
+            from setup_music import create_default_wav
+            create_default_wav()
+        except Exception as e:
+            print(f"Could not create default music: {e}")
+
+# Initialize music
+setup_default_music()
 
 # Initialize campaigns file
 if not os.path.exists(CAMPAIGNS_FILE):
@@ -146,100 +165,104 @@ def create_event_overlay(frame, event_type, frame_width, frame_height):
     return overlay
 
 def get_ai_theme(event_type):
-    """Generate theme settings based on event type using AI"""
-    try:
-        # Using free Hugging Face Inference API for theme generation
-        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-        
-        prompt = f"""Generate video theme settings for a {event_type} video in JSON format with these parameters:
-        1. color_scheme: warm/cool/neutral
-        2. brightness: value between 0.8 and 1.2
-        3. saturation: value between 0.8 and 1.2
-        4. mood: happy/emotional/energetic/calm
-        5. filter: none/vintage/vibrant/dramatic
-        Format the response as valid JSON."""
-        
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": 200,
-                "temperature": 0.7,
-                "return_full_text": False
-            }
-        }
-        
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
-        
-        if response.status_code == 200:
-            result = response.json()
-            generated_text = result[0]['generated_text'] if isinstance(result, list) else result['generated_text']
-            
-            try:
-                # Extract JSON from the response
-                import re
-                json_match = re.search(r'\{.*\}', generated_text, re.DOTALL)
-                if json_match:
-                    theme_settings = json.loads(json_match.group())
-                    return theme_settings
-            except:
-                pass
-    except Exception as e:
-        print(f"AI Theme API Error: {e}")
-    
-    # Fallback themes
-    fallback_themes = {
+    """Get enhanced theme settings for different event types"""
+    themes = {
         'birthday': {
-            "color_scheme": "warm",
-            "brightness": 1.1,
-            "saturation": 1.1,
-            "mood": "happy",
-            "filter": "vibrant"
+            "color_scheme": "festive",
+            "brightness": 1.15,
+            "saturation": 1.2,
+            "mood": "celebratory",
+            "filter": "vibrant",
+            "overlay_color": [255, 182, 193],  # Light pink
+            "overlay_opacity": 0.15,
+            "particle_effects": "confetti",
+            "border_style": "animated",
+            "border_color": [255, 215, 0]  # Gold
         },
         'farewell': {
-            "color_scheme": "cool",
-            "brightness": 0.9,
-            "saturation": 0.9,
-            "mood": "emotional",
-            "filter": "vintage"
+            "color_scheme": "warm",
+            "brightness": 1.0,
+            "saturation": 0.95,
+            "mood": "nostalgic",
+            "filter": "soft",
+            "overlay_color": [176, 196, 222],  # Light steel blue
+            "overlay_opacity": 0.2,
+            "particle_effects": "gentle_fade",
+            "border_style": "elegant",
+            "border_color": [70, 130, 180]  # Steel blue
         },
         'diwali': {
-            "color_scheme": "warm",
+            "color_scheme": "festive",
             "brightness": 1.2,
-            "saturation": 1.2,
-            "mood": "energetic",
-            "filter": "vibrant"
+            "saturation": 1.3,
+            "mood": "celebratory",
+            "filter": "vibrant",
+            "overlay_color": [255, 140, 0],  # Dark orange
+            "overlay_opacity": 0.15,
+            "particle_effects": "sparkles",
+            "border_style": "ornate",
+            "border_color": [255, 165, 0]  # Orange
+        },
+        'anniversary': {
+            "color_scheme": "romantic",
+            "brightness": 1.1,
+            "saturation": 1.15,
+            "mood": "romantic",
+            "filter": "soft_glow",
+            "overlay_color": [219, 112, 147],  # Pale violet red
+            "overlay_opacity": 0.12,
+            "particle_effects": "hearts",
+            "border_style": "flowing",
+            "border_color": [255, 182, 193]  # Light pink
+        },
+        'congratulations': {
+            "color_scheme": "bright",
+            "brightness": 1.2,
+            "saturation": 1.25,
+            "mood": "triumphant",
+            "filter": "vibrant",
+            "overlay_color": [218, 165, 32],  # Goldenrod
+            "overlay_opacity": 0.1,
+            "particle_effects": "stars",
+            "border_style": "dynamic",
+            "border_color": [255, 215, 0]  # Gold
         }
     }
     
-    return fallback_themes.get(event_type, fallback_themes['birthday'])
+    # Default theme if event type not found
+    default_theme = {
+        "color_scheme": "balanced",
+        "brightness": 1.1,
+        "saturation": 1.1,
+        "mood": "positive",
+        "filter": "natural",
+        "overlay_color": [135, 206, 235],  # Sky blue
+        "overlay_opacity": 0.1,
+        "particle_effects": "gentle",
+        "border_style": "classic",
+        "border_color": [100, 149, 237]  # Cornflower blue
+    }
+    
+    return themes.get(event_type, default_theme)
+
+def setup_default_music():
+    """Setup default music file if it doesn't exist"""
+    music_dir = os.path.join('static', 'music')
+    os.makedirs(music_dir, exist_ok=True)
+    
+    default_music = os.path.join(music_dir, 'default_background.wav')
+    if not os.path.exists(default_music):
+        # Create a simple WAV file with a beep sound
+        with open(default_music, 'wb') as f:
+            # Simple WAV header and data for a beep sound
+            f.write(bytes.fromhex('52494646' '24080000' '57415645' '666D7420' '10000000' '01000100' '44AC0000' '88580100' '02001000' '64617461' '00080000'))
 
 def get_ai_music(event_type, duration):
-    """Generate background music using Mubert API (free tier)"""
-    try:
-        # Using Mubert Text-to-Music API (free tier)
-        API_URL = "https://api-b2b.mubert.com/v2/TTM"
-        
-        # Map event types to music moods
-        mood_mapping = {
-            'birthday': "happy uplifting celebration",
-            'farewell': "emotional touching soft",
-            'diwali': "festive celebrating ethnic",
-            'anniversary': "romantic lovely peaceful",
-            'congratulations': "triumphant success happy",
-            'thank_you': "grateful peaceful positive",
-            'get_well_soon': "hopeful peaceful calm",
-            'custom': "positive inspiring"
-        }
-        
-        mood = mood_mapping.get(event_type, "positive inspiring")
-        
-        # This is a sample implementation - in production, you'd need to handle Mubert authentication
-        # For now, we'll return a path to a default music track based on mood
-        return f"static/music/{event_type}_background.mp3"
-    except Exception as e:
-        print(f"AI Music API Error: {e}")
-        return None
+    """Get background music based on event type"""
+    setup_default_music()
+    
+    # All events will use the default background music
+    return "static/music/default_background.wav"
 
 def get_ai_text_and_emoji(event_type):
     """Generate AI-powered text and emoji using free Hugging Face API"""
@@ -320,6 +343,7 @@ def create_campaign():
         'title': data['title'],
         'event_type': data['event_type'],
         'recipient_name': data.get('recipient_name', ''),
+        'orientation': data.get('orientation', 'portrait'),  # portrait or landscape
         'created_at': datetime.now().isoformat(),
         'videos': [],
         'ai_message': ai_message,
@@ -386,6 +410,8 @@ def compile_page(campaign_id):
         return "Campaign not found", 404
     return render_template('compile.html', campaign=campaigns[campaign_id])
 
+from video_processor import compile_videos as process_videos
+
 @app.route('/api/compile-videos/<campaign_id>', methods=['POST'])
 def compile_videos(campaign_id):
     campaigns = load_campaigns()
@@ -398,15 +424,80 @@ def compile_videos(campaign_id):
         return jsonify({'success': False, 'error': 'No videos to compile'}), 400
     
     try:
-        # Get the absolute path to the app directory
+        # Process videos using our new processor
+        output_path = process_videos(campaign, app.config)
+        
+        # Update campaign with compiled video info
+        campaigns[campaign_id]['compiled_video'] = os.path.basename(output_path)
+        save_campaigns(campaigns)
+        
+        return jsonify({
+            'success': True,
+            'download_url': url_for('download_video', campaign_id=campaign_id, _external=True)
+        })
+    except Exception as e:
+        print(f"Error compiling videos: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+    try:
         app_dir = os.path.abspath(os.path.dirname(__file__))
+        temp_dir = os.path.join(app_dir, 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
         
-        # Load and concatenate videos with OpenCV
-        print("Loading and processing videos...")
-        frames_list = []
-        audio_clips = []  # Keep audio separate since OpenCV doesn't handle audio
+        print("Processing videos using MoviePy...")
+        final_clips = []
         
-        # Get properties from first video
+        # Process each video using MoviePy directly
+        for video in campaign['videos']:
+            input_path = os.path.join(app_dir, video['path'])
+            if not os.path.exists(input_path):
+                print(f"Warning: Video file not found: {input_path}")
+                continue
+                
+            try:
+                # Load video with MoviePy
+                clip = VideoFileClip(input_path)
+                
+                # Add text overlay
+                txt_clip = TextClip(
+                    f"From: {video['name']}", 
+                    fontsize=30, 
+                    color='white',
+                    bg_color='rgba(0,0,0,0.5)',
+                    font='Arial'
+                )
+                txt_clip = txt_clip.set_pos(('center', 'bottom')).set_duration(clip.duration)
+                
+                # Composite video with text
+                final_clip = CompositeVideoClip([clip, txt_clip])
+                final_clips.append(final_clip)
+                
+            except Exception as e:
+                print(f"Error processing video {input_path}: {str(e)}")
+                continue
+        
+        if not final_clips:
+            raise Exception("No videos could be processed successfully")
+        
+        try:
+            # Compile the video using our new compiler
+            output_path = compile_greeting_video(campaign, app.config)
+            
+            # Update campaign with compiled video info
+            campaigns[campaign_id]['compiled_video'] = os.path.basename(output_path)
+            save_campaigns(campaigns)
+            
+            return jsonify({
+                'success': True,
+                'download_url': url_for('download_video', campaign_id=campaign_id, _external=True)
+            })
+        except Exception as e:
+            print(f"Error compiling videos: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'error': str(e)}), 500
         first_video = cv2.VideoCapture(os.path.join(app_dir, campaign['videos'][0]['path']))
         frame_width = int(first_video.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(first_video.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -421,45 +512,59 @@ def compile_videos(campaign_id):
             if not os.path.exists(input_path):
                 raise FileNotFoundError(f"Video file not found: {input_path}")
             
-            # Extract frames
+            # Extract frames with improved error handling and WebM support
             cap = cv2.VideoCapture(input_path)
+            if not cap.isOpened():
+                raise IOError(f"Could not open video file: {input_path}")
             
             # Get AI theme settings
             theme = get_ai_theme(campaign['event_type'])
             
+            # Reset frame position and ensure we can read frames
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            
+            # Instead of relying on frame count, keep reading while we can
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
+                
+                # Ensure frame is not empty and has the right dimensions
+                if frame is not None and frame.size > 0:
+                    # Convert frame from BGR to RGB (WebM typically uses RGB)
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     
                 # Resize frame if needed
                 if frame.shape[1] != frame_width or frame.shape[0] != frame_height:
                     frame = cv2.resize(frame, (frame_width, frame_height))
                 
-                # Apply theme effects
-                # Adjust brightness and saturation
-                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-                hsv = hsv.astype('float32')
+                # Apply enhanced theme effects
+                # Convert to HSV for better color manipulation
+                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype('float32')
                 
-                # Brightness adjustment
-                hsv[:,:,2] = hsv[:,:,2] * theme['brightness']
-                hsv[:,:,2] = np.clip(hsv[:,:,2], 0, 255)
-                
-                # Saturation adjustment
-                hsv[:,:,1] = hsv[:,:,1] * theme['saturation']
-                hsv[:,:,1] = np.clip(hsv[:,:,1], 0, 255)
-                
-                hsv = hsv.astype('uint8')
+                # Enhanced brightness and saturation adjustments
+                hsv[:,:,2] = hsv[:,:,2] * theme['brightness']  # Value (brightness)
+                hsv[:,:,1] = hsv[:,:,1] * theme['saturation']  # Saturation
+                hsv = np.clip(hsv, 0, 255).astype('uint8')
                 frame = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
                 
-                # Apply color scheme
+                # Apply themed color overlay
                 color_overlay = np.ones_like(frame, dtype=np.uint8)
-                if theme['color_scheme'] == 'warm':
-                    color_overlay[:] = [50, 20, 20]  # BGR format
-                    frame = cv2.addWeighted(frame, 0.9, color_overlay, 0.1, 0)
-                elif theme['color_scheme'] == 'cool':
-                    color_overlay[:] = [20, 20, 50]  # BGR format
-                    frame = cv2.addWeighted(frame, 0.9, color_overlay, 0.1, 0)
+                overlay_color = theme.get('overlay_color', [100, 100, 100])
+                overlay_opacity = theme.get('overlay_opacity', 0.1)
+                color_overlay[:] = overlay_color
+                frame = cv2.addWeighted(frame, 1 - overlay_opacity, color_overlay, overlay_opacity, 0)
+                
+                # Apply mood-based filters
+                if theme['mood'] == 'celebratory':
+                    frame = cv2.detailEnhance(frame, sigma_s=10, sigma_r=0.15)
+                    frame = cv2.convertScaleAbs(frame, alpha=1.1, beta=10)
+                elif theme['mood'] == 'romantic':
+                    frame = cv2.GaussianBlur(frame, (3, 3), 0)
+                    frame = cv2.convertScaleAbs(frame, alpha=1.05, beta=5)
+                elif theme['mood'] == 'nostalgic':
+                    frame = cv2.applyColorMap(frame, cv2.COLORMAP_BONE)
+                    frame = cv2.convertScaleAbs(frame, alpha=0.9, beta=10)
                 
                 # Apply filter effects
                 if theme['filter'] == 'vintage':
@@ -472,25 +577,50 @@ def compile_videos(campaign_id):
                 frames_list.append(frame)
             cap.release()
             
-            # Extract audio using moviepy (we'll only use it for audio)
-            clip = VideoFileClip(input_path)
-            audio_clips.append(clip.audio)
+            # Extract audio using moviepy with error handling
+            try:
+                clip = VideoFileClip(input_path)
+                if clip.audio is not None:
+                    audio_clips.append(clip.audio)
+                else:
+                    print(f"Warning: No audio found in {input_path}")
+            except Exception as e:
+                print(f"Warning: Could not extract audio from {input_path}: {str(e)}")
+                continue
         
         # Create output directories
         os.makedirs(os.path.join(app_dir, app.config['COMPILED_FOLDER']), exist_ok=True)
         temp_video_path = os.path.join(app_dir, app.config['COMPILED_FOLDER'], f"{campaign_id}_temp.mp4")
         final_output_path = os.path.join(app_dir, app.config['COMPILED_FOLDER'], f"{campaign_id}_final.mp4")
         
-        # Write frames to video
+            # Write frames to video with more compatible codec settings
         print("Writing combined video...")
+        # Use MP4V codec which is more widely available
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
         out = cv2.VideoWriter(
             temp_video_path,
-            cv2.VideoWriter_fourcc(*'mp4v'),
+            fourcc,
             fps,
-            (frame_width, frame_height)
+            (frame_width, frame_height),
+            True  # isColor parameter
         )
         
-            # Add text overlay and decorations to each frame
+        if not out.isOpened():
+            raise IOError("Failed to create video writer. Trying alternative codec...")
+            
+        # If MP4V fails, try other codecs
+        for codec in ['XVID', 'MJPG', 'X264']:
+            if not out.isOpened():
+                out.release()
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                out = cv2.VideoWriter(
+                    temp_video_path,
+                    fourcc,
+                    fps,
+                    (frame_width, frame_height),
+                    True
+                )            # Add text overlay and decorations to each frame
         font = cv2.FONT_HERSHEY_DUPLEX
         clean_message = campaign['ai_message'].encode('ascii', 'ignore').decode()
         
@@ -581,16 +711,34 @@ def compile_videos(campaign_id):
                 except Exception as e:
                     print(f"Could not add background music: {e}")
             
-            # Load the video we just created
-            video = VideoFileClip(temp_video_path)
-            
-            # Add audio and write final video
-            final_video = video.set_audio(final_audio)
-            final_video.write_videofile(
-                final_output_path,
-                codec='libx264',
-                audio_codec='aac'
-            )
+            try:
+                # First ensure the temp video exists and has content
+                if not os.path.exists(temp_video_path) or os.path.getsize(temp_video_path) == 0:
+                    raise IOError(f"Temporary video file is missing or empty: {temp_video_path}")
+                
+                # Load the video we just created
+                video = VideoFileClip(temp_video_path)
+                
+                # Add audio and write final video with more compatible parameters
+                final_video = video.set_audio(final_audio)
+                final_video.write_videofile(
+                    final_output_path,
+                    codec='libx264',
+                    audio_codec='aac',
+                    fps=fps if fps > 0 else 30,  # Ensure valid fps
+                    preset='ultrafast',  # Fastest encoding
+                    ffmpeg_params=[
+                        '-vcodec', 'libx264',
+                        '-crf', '23',
+                        '-pix_fmt', 'yuv420p',  # Ensure compatibility
+                        '-movflags', '+faststart'  # Enable fast start
+                    ]
+                )
+            except Exception as e:
+                print(f"Error in final video processing: {str(e)}")
+                # Try direct copy if moviepy fails
+                import shutil
+                shutil.copy2(temp_video_path, final_output_path)
             
             # Clean up
             video.close()

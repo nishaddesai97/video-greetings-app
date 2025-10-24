@@ -1,0 +1,493 @@
+import cv2
+import numpy as np
+import os
+from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
+from moviepy.audio.AudioClip import AudioArrayClip
+import time
+
+def create_intro_video(message, emojis, output_size=(720, 1280), duration=3, fps=30):
+    """Create an animated intro video with message and emojis"""
+    frames = []
+    total_frames = duration * fps
+    
+    for frame_num in range(total_frames):
+        # Create base frame
+        frame = np.zeros((output_size[1], output_size[0], 3), dtype=np.uint8)
+        
+        # Calculate animation progress (0 to 1)
+        progress = frame_num / total_frames
+        
+        # Animated background
+        for i in range(0, output_size[1], 50):
+            color_val = int(127 + 127 * np.sin(time.time() + i/100 + progress * 2 * np.pi))
+            cv2.line(frame, (0, i), (output_size[0], i), (0, color_val, color_val), 2)
+        
+        # Add message with animation
+        font = cv2.FONT_HERSHEY_DUPLEX
+        font_scale = 1.2
+        thickness = 2
+        
+        # Get text sizes
+        (msg_width, msg_height), _ = cv2.getTextSize(message, font, font_scale, thickness)
+        (emoji_width, emoji_height), _ = cv2.getTextSize(emojis, font, font_scale, thickness)
+        
+        # Calculate positions
+        msg_x = (output_size[0] - msg_width) // 2
+        emoji_x = (output_size[0] - emoji_width) // 2
+        
+        # Animate text position and opacity
+        if progress < 0.3:
+            # Fade in and slide up
+            opacity = progress / 0.3
+            y_offset = int(50 * (1 - progress / 0.3))
+        else:
+            opacity = 1.0
+            y_offset = 0
+        
+        msg_y = output_size[1] // 2 - 50 + y_offset
+        emoji_y = output_size[1] // 2 + 50 + y_offset
+        
+        # Add decorative border
+        border_color = (int(127 + 127 * np.sin(progress * 2 * np.pi)),
+                       int(127 + 127 * np.cos(progress * 2 * np.pi)),
+                       int(127 + 127 * np.sin(progress * 4 * np.pi)))
+        
+        thickness = int(10 * (1 + 0.5 * np.sin(progress * 2 * np.pi)))
+        cv2.rectangle(frame, (20, 20), (output_size[0]-20, output_size[1]-20), border_color, thickness)
+        
+        # Add background for text
+        overlay = frame.copy()
+        cv2.rectangle(overlay, 
+                     (msg_x - 20, msg_y - msg_height - 40),
+                     (msg_x + msg_width + 20, emoji_y + emoji_height + 20),
+                     (0, 0, 0),
+                     -1)
+        frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
+        
+        # Add text with opacity
+        color = (int(255 * opacity), int(255 * opacity), int(255 * opacity))
+        cv2.putText(frame, message, (msg_x, msg_y), font, font_scale, color, thickness)
+        cv2.putText(frame, emojis, (emoji_x, emoji_y), font, font_scale, color, thickness)
+        
+        frames.append(frame)
+    
+    return frames
+
+def create_themed_frame(frame, theme_type, progress):
+    """Apply themed effects and borders to a frame"""
+    h, w = frame.shape[:2]
+    
+    # Create a copy for effects
+    result = frame.copy()
+    
+    # Add themed border
+    border_width = int(min(w, h) * 0.1)  # 10% border width
+    
+    if theme_type == 'birthday':
+        # Festive border with animated colors
+        border_color = (
+            int(127 + 127 * np.sin(progress * 2 * np.pi)),
+            int(127 + 127 * np.cos(progress * 2 * np.pi)),
+            int(127 + 127 * np.sin(progress * 4 * np.pi))
+        )
+        cv2.rectangle(result, (border_width, border_width), 
+                     (w-border_width, h-border_width), border_color, border_width)
+        
+        # Add corner decorations
+        radius = border_width * 2
+        for corner in [(radius, radius), (w-radius, radius), 
+                      (radius, h-radius), (w-radius, h-radius)]:
+            cv2.circle(result, corner, radius, border_color, -1)
+            
+    elif theme_type == 'diwali':
+        # Rangoli-inspired border
+        angles = np.linspace(0, 2*np.pi, 8)
+        center = (w//2, h//2)
+        for i, angle in enumerate(angles):
+            color = (
+                int(127 + 127 * np.sin(progress * 2 * np.pi + i)),
+                int(127 + 127 * np.cos(progress * 2 * np.pi + i)),
+                int(127 + 127 * np.sin(progress * 4 * np.pi + i))
+            )
+            pt1 = (int(center[0] + np.cos(angle) * w/3),
+                  int(center[1] + np.sin(angle) * h/3))
+            next_angle = angles[(i+1) % len(angles)]
+            pt2 = (int(center[0] + np.cos(next_angle) * w/3),
+                  int(center[1] + np.sin(next_angle) * h/3))
+            cv2.line(result, pt1, pt2, color, border_width)
+            
+    else:
+        # Default elegant border
+        border_color = (200, 200, 200)
+        cv2.rectangle(result, (border_width, border_width), 
+                     (w-border_width, h-border_width), border_color, border_width)
+    
+    # Add vignette effect
+    mask = np.zeros((h, w), dtype=np.float32)
+    center = (w//2, h//2)
+    max_dist = np.sqrt((w/2)**2 + (h/2)**2)
+    
+    # Create coordinate matrices
+    y, x = np.ogrid[:h, :w]
+    dist = np.sqrt((x - center[0])**2 + (y - center[1])**2)
+    mask = 1 - (dist / max_dist) * 0.3
+    
+    # Ensure mask is in range [0, 1]
+    mask = np.clip(mask, 0, 1)
+    
+    # Expand mask to match image channels
+    mask = np.dstack([mask] * 3)
+    
+    # Apply vignette
+    result = (result * mask).astype(np.uint8)
+    
+    return result
+
+def compile_videos(campaign, app_config):
+    """Compile videos with improved effects and audio"""
+    app_dir = os.path.abspath(os.path.dirname(__file__))
+    temp_dir = os.path.join(app_dir, 'temp')
+    os.makedirs(temp_dir, exist_ok=True)
+    os.makedirs(os.path.join(app_dir, app_config['COMPILED_FOLDER']), exist_ok=True)
+    
+    # Output video settings
+    output_width = 720
+    output_height = 1280
+    output_fps = 30
+    
+    # Create intro frames
+    print("Creating intro sequence...")
+    intro_frames = create_intro_video(
+        campaign.get('ai_message', 'Thank you for your message!'),
+        campaign.get('ai_emojis', '🎉 ✨ 💝'),
+        (output_width, output_height)
+    )
+    
+    # Save intro frames as video
+    intro_path = os.path.join(temp_dir, 'intro.mp4')
+    out = cv2.VideoWriter(
+        intro_path,
+        cv2.VideoWriter_fourcc(*'mp4v'),
+        output_fps,
+        (output_width, output_height)
+    )
+    for frame in intro_frames:
+        out.write(frame)
+    out.release()
+    
+    # Process each video
+    processed_videos = []
+    temp_files = [intro_path]
+    
+    for idx, video in enumerate(campaign['videos']):
+        input_path = os.path.join(app_dir, video['path'])
+        temp_output = os.path.join(temp_dir, f"temp_{idx}.mp4")
+        temp_files.append(temp_output)
+        
+        try:
+            # First try to get video information using OpenCV
+            cap = cv2.VideoCapture(input_path)
+            if not cap.isOpened():
+                raise Exception("Could not open video file with OpenCV")
+                
+            # Get video properties
+            input_fps = cap.get(cv2.CAP_PROP_FPS)
+            if input_fps <= 0 or input_fps > 120:  # Sanity check
+                input_fps = 30.0  # fallback to standard fps
+                
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if frame_count <= 0:  # Invalid frame count
+                # Try to load with MoviePy to get duration
+                clip = VideoFileClip(input_path)
+                frame_count = int(clip.duration * input_fps)
+                clip.close()
+            
+            # Create video writer
+            out = cv2.VideoWriter(
+                temp_output,
+                cv2.VideoWriter_fourcc(*'mp4v'),
+                input_fps,
+                (output_width, output_height)
+            )
+            
+            # Process each frame using OpenCV
+            frame_idx = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                    
+                progress = frame_idx / frame_count if frame_count > 0 else 0
+                
+                # Get frame from clip
+                frame = clip.get_frame(frame_idx / input_fps)
+                
+                # Convert from RGB to BGR for OpenCV
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+                # Resize frame maintaining aspect ratio
+                h, w = frame.shape[:2]
+                scale = min(output_width/w, output_height/h)
+                new_size = (int(w * scale), int(h * scale))
+                frame = cv2.resize(frame, new_size)
+                
+                # Create canvas and center the frame
+                canvas = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+                y_offset = (output_height - new_size[1]) // 2
+                x_offset = (output_width - new_size[0]) // 2
+                canvas[y_offset:y_offset+new_size[1], 
+                       x_offset:x_offset+new_size[0]] = frame
+                
+                # Apply themed effects
+                canvas = create_themed_frame(canvas, campaign['event_type'], progress)
+                
+                # Add text overlay
+                font = cv2.FONT_HERSHEY_DUPLEX
+                text = f"From: {video['name']}"
+                font_scale = 1.0
+                thickness = 2
+                
+                (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
+                text_x = (output_width - text_width) // 2
+                text_y = output_height - 50
+                
+                # Add semi-transparent background
+                overlay = canvas.copy()
+                cv2.rectangle(
+                    overlay,
+                    (text_x - 20, text_y - text_height - 10),
+                    (text_x + text_width + 20, text_y + 10),
+                    (0, 0, 0),
+                    -1
+                )
+                canvas = cv2.addWeighted(overlay, 0.7, canvas, 0.3, 0)
+                
+                # Add text
+                cv2.putText(
+                    canvas,
+                    text,
+                    (text_x, text_y),
+                    font,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness
+                )
+                
+                # Keep in BGR format for writing with OpenCV
+                out.write(canvas)
+            
+            clip.close()
+            out.release()
+            
+            # Add to processed videos
+            processed_clip = VideoFileClip(temp_output)
+            processed_videos.append(processed_clip)
+            
+        except Exception as e:
+            print(f"Error processing video {input_path}: {str(e)}")
+            continue
+    
+    if not processed_videos:
+        raise Exception("No videos could be processed successfully")
+        
+    try:
+        # Add intro
+        intro_clip = VideoFileClip(intro_path)
+        all_clips = [intro_clip] + processed_videos
+        
+        # Create final video with crossfade transitions
+        print("Creating final video with transitions...")
+        final_output = os.path.join(app_dir, app_config['COMPILED_FOLDER'], 
+                                  f"{campaign['id']}_final.mp4")
+        
+        # Add music based on event type
+        music_path = os.path.join(app_dir, 'static', 'music', 
+                                f"{campaign['event_type']}.wav")
+        if not os.path.exists(music_path):
+            music_path = os.path.join(app_dir, 'static', 'music', 
+                                    'default_background.wav')
+        
+        # First concatenate without transitions
+        final_video = concatenate_videoclips(all_clips)
+        
+        # Add background music
+        if os.path.exists(music_path):
+            background_music = AudioFileClip(music_path)
+            background_music = background_music.set_duration(final_video.duration)
+            background_music = background_music.volumex(0.3)  # 30% volume
+            
+            if final_video.audio is not None:
+                final_audio = CompositeAudioClip([
+                    final_video.audio,
+                    background_music
+                ])
+            else:
+                final_audio = background_music
+                
+            final_video = final_video.set_audio(final_audio)
+        
+        # Write final video with optimized settings
+        final_video.write_videofile(
+            final_output,
+            codec='libx264',
+            audio_codec='aac',
+            fps=30,  # Fixed fps for final video
+            preset='medium',
+            ffmpeg_params=[
+                '-pix_fmt', 'yuv420p',
+                '-profile:v', 'main',
+                '-crf', '23',
+                '-movflags', '+faststart'
+            ]
+        )
+        
+        # Clean up
+        for clip in all_clips:
+            clip.close()
+        
+        # Remove temp files
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                
+        return final_output
+        
+    except Exception as e:
+        print(f"Error in final video creation: {str(e)}")
+        raise
+    
+    for idx, video in enumerate(campaign['videos']):
+        input_path = os.path.join(app_dir, video['path'])
+        temp_output = os.path.join(temp_dir, f"temp_{idx}.mp4")
+        temp_files.append(temp_output)
+        
+        try:
+            # Open input video
+            cap = cv2.VideoCapture(input_path)
+            if not cap.isOpened():
+                print(f"Could not open video: {input_path}")
+                continue
+                
+            # Get video info
+            frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
+            # Calculate scaling and padding
+            scale = min(output_width/frame_width, output_height/frame_height)
+            new_width = int(frame_width * scale)
+            new_height = int(frame_height * scale)
+            
+            # Calculate padding
+            pad_x = (output_width - new_width) // 2
+            pad_y = (output_height - new_height) // 2
+            
+            # Create video writer
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(
+                temp_output,
+                fourcc,
+                output_fps,
+                (output_width, output_height)
+            )
+            
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                    
+                # Resize frame
+                frame = cv2.resize(frame, (new_width, new_height))
+                
+                # Create canvas
+                canvas = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+                
+                # Place frame in center
+                canvas[pad_y:pad_y+new_height, pad_x:pad_x+new_width] = frame
+                
+                # Add text overlay
+                font = cv2.FONT_HERSHEY_DUPLEX
+                text = f"From: {video['name']}"
+                font_scale = 1.0
+                thickness = 2
+                
+                # Get text size
+                (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
+                
+                # Calculate text position (bottom center)
+                text_x = (output_width - text_width) // 2
+                text_y = output_height - 50
+                
+                # Add semi-transparent background
+                overlay = canvas.copy()
+                cv2.rectangle(
+                    overlay,
+                    (text_x - 10, text_y - text_height - 10),
+                    (text_x + text_width + 10, text_y + 10),
+                    (0, 0, 0),
+                    -1
+                )
+                canvas = cv2.addWeighted(overlay, 0.7, canvas, 0.3, 0)
+                
+                # Add text
+                cv2.putText(
+                    canvas,
+                    text,
+                    (text_x, text_y),
+                    font,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness
+                )
+                
+                out.write(canvas)
+            
+            cap.release()
+            out.release()
+            
+            # Convert to MoviePy clip for final composition
+            clip = VideoFileClip(temp_output)
+            processed_videos.append(clip)
+            
+        except Exception as e:
+            print(f"Error processing video {input_path}: {str(e)}")
+            continue
+    
+    if not processed_videos:
+        raise Exception("No videos could be processed successfully")
+        
+    try:
+        # Create final video
+        print("Creating final video...")
+        final_output = os.path.join(app_dir, app_config['COMPILED_FOLDER'], f"{campaign['id']}_final.mp4")
+        
+        # Concatenate all clips
+        final_video = concatenate_videoclips(processed_videos)
+        
+        # Write final video with optimized settings
+        final_video.write_videofile(
+            final_output,
+            codec='libx264',
+            audio_codec='aac',
+            fps=output_fps,
+            preset='ultrafast',
+            ffmpeg_params=[
+                '-pix_fmt', 'yuv420p',
+                '-crf', '28',
+                '-movflags', '+faststart'
+            ]
+        )
+        
+        # Clean up
+        for clip in processed_videos:
+            clip.close()
+            
+        # Remove temp files
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                
+        return final_output
+        
+    except Exception as e:
+        print(f"Error in final video creation: {str(e)}")
+        raise
